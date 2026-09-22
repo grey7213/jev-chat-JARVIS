@@ -206,6 +206,9 @@ class Prefs(context: Context, prefsName: String = PREFS_MAIN) {
     /** Full POST URL for the OpenAI-compatible chat completions call. */
     fun replyEndpoint(): String = "${replyBaseUrl.trim().trimEnd('/')}/chat/completions"
 
+    /** GET URL for the reply route's OpenAI-compatible model list (`/v1/models`). */
+    fun replyModelsEndpoint(): String = "${replyBaseUrl.trim().trimEnd('/')}/models"
+
     /** Same shape as [replyEndpoint]; blank falls back to the OpenRouter default. */
     fun visionEndpoint(): String {
         val base = visionBaseUrl.trim().ifBlank { DEFAULT_VISION_BASE }
