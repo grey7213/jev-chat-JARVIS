@@ -105,6 +105,44 @@ object HttpJson {
         throw last ?: ApiException(route, null, "请求失败")
     }
 
+    /**
+     * Shared GET-JSON helper for read-only calls (e.g. `/v1/models`). Same auth
+     * and error handling as [post], but no body and no retry: a model-list fetch
+     * is a one-shot the user triggers by hand, so a failure just surfaces.
+     */
+    fun get(
+        url: String,
+        key: String,
+        route: String,
+        extraHeaders: Map<String, String> = emptyMap()
+    ): JSONObject {
+        var conn: HttpURLConnection? = null
+        try {
+            conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 15000
+                readTimeout = 25000
+                setRequestProperty("Authorization", "Bearer $key")
+                setRequestProperty("Accept", "application/json")
+                extraHeaders.forEach { (k, v) -> setRequestProperty(k, v) }
+            }
+            val code = conn.responseCode
+            if (code !in 200..299) {
+                val errText = readBody(conn.errorStream)
+                throw ApiException(route, code, errText.ifBlank { "（响应体为空）" })
+            }
+            val text = readBody(conn.inputStream)
+            if (text.isBlank()) throw ApiException(route, code, "响应体为空")
+            return JSONObject(text)
+        } catch (e: ApiException) {
+            throw e
+        } catch (e: Exception) {
+            throw ApiException(route, null, describe(e))
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
     /** Body text, or "" — a null stream or a read failure never costs us the status code. */
     private fun readBody(stream: java.io.InputStream?): String {
         stream ?: return ""

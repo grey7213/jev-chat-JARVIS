@@ -13,11 +13,13 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -175,6 +177,50 @@ class SettingsActivity : AppCompatActivity() {
         replyCard.addView(label("模型"))
         replyCard.addView(replyModelEdit)
         val replyResult = resultText()
+        // Model picker: pull the host's /v1/models and choose one, instead of
+        // typing an exact id. Populates the box above on selection.
+        val modelSpinner = Spinner(this)
+        val modelAdapter = ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item, mutableListOf(MODELS_HINT))
+        modelSpinner.adapter = modelAdapter
+        modelSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val picked = modelAdapter.getItem(position).orEmpty()
+                if (picked.isNotBlank() && picked != MODELS_HINT && !picked.startsWith("未")) {
+                    replyModelEdit.setText(picked)
+                }
+            }
+        }
+        replyCard.addView(modelSpinner)
+        replyCard.addView(cardBtn("拉取模型列表") {
+            val probe = draftPrefs(SCRATCH_REPLY) {
+                judgeKey = judgeKeyEdit.text.toString().trim()
+                replyBaseUrl = replyBaseEdit.text.toString().trim().ifBlank { Prefs.DEFAULT_REPLY_BASE }
+                replyKey = replyKeyEdit.text.toString().trim()
+                replyModel = replyModelEdit.text.toString().trim().ifBlank { Prefs.DEFAULT_REPLY_MODEL }
+            }
+            if (probe.effectiveReplyKey().isBlank()) { replyResult.text = "请先填密钥（或填判断接口密钥）"; return@cardBtn }
+            replyResult.text = "正在拉取模型列表…"
+            worker.execute {
+                var err: String? = null
+                val models = try { ReplyClient(probe).listModels() } catch (e: Exception) { err = e.message; emptyList() }
+                main.post {
+                    modelAdapter.clear()
+                    when {
+                        err != null -> { modelAdapter.add(MODELS_HINT); replyResult.text = "拉取失败：$err" }
+                        models.isEmpty() -> { modelAdapter.add("未返回模型，检查地址与权限"); replyResult.text = "未找到模型" }
+                        else -> {
+                            modelAdapter.addAll(models)
+                            val cur = models.indexOf(replyModelEdit.text.toString().trim()).coerceAtLeast(0)
+                            modelSpinner.setSelection(cur)
+                            replyResult.text = "已拉取 ${models.size} 个模型，从上方下拉选择"
+                        }
+                    }
+                    modelAdapter.notifyDataSetChanged()
+                }
+            }
+        })
         replyCard.addView(cardBtn("测试回复") {
             val base = replyBaseEdit.text.toString().trim()
             val model = replyModelEdit.text.toString().trim()
@@ -580,6 +626,9 @@ class SettingsActivity : AppCompatActivity() {
         private const val SCRATCH_JUDGE = "jev_probe_scratch_judge"
         private const val SCRATCH_REPLY = "jev_probe_scratch_reply"
         private const val SCRATCH_VISION = "jev_probe_scratch_vision"
+
+        /** Placeholder shown in the reply model spinner before a list is pulled. */
+        private const val MODELS_HINT = "先点“拉取模型列表”"
 
     }
 }

@@ -60,6 +60,24 @@ class ReplyClient(private val prefs: Prefs) {
     fun ping(): String =
         chat("你是连通性测试助手，只按要求回答，不要解释。", "请只回复两个字：收到", temperature = 0.0).trim()
 
+    /**
+     * Model IDs the reply host exposes at its OpenAI-compatible `/models`
+     * endpoint, de-duplicated and sorted. Lets the settings page offer a picker
+     * instead of making the user type an exact model name. Empty = the host
+     * returned no `data[].id` (not an error — some gateways omit the list).
+     */
+    fun listModels(): List<String> {
+        val url = prefs.replyModelsEndpoint()
+        val resp = HttpJson.get(url, prefs.effectiveReplyKey(), Route.REPLY, HttpJson.headersFor(url))
+        val data = resp.optJSONArray("data") ?: return emptyList()
+        return buildList {
+            for (i in 0 until data.length()) {
+                val id = data.optJSONObject(i)?.optString("id")?.trim().orEmpty()
+                if (id.isNotEmpty()) add(id)
+            }
+        }.distinct().sorted()
+    }
+
     /** Condense a block of text (used by the D-stage contact auto-summary). */
     fun summarize(text: String): String {
         if (text.isBlank()) return ""
